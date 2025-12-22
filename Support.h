@@ -21,35 +21,39 @@ namespace ReignEngine
 	using InputCode = MFint32;
 	enum BUILD_KEY_CODES : InputCode
 	{
-		DEFUALT = 0XFF,
-		UP = 0X48,
-		DOWN = 0X50,
-		LEFT = 0X4B,
-		RIGHT = 0X4D,
-		ESCAPE = 0X1B,
-		BACKSPACE = 0X08,
-		DEL = 0X53,
-		RETURN = 0X0D,
+		DEFAULT,
+		UP,
+		DOWN,
+		LEFT,
+		RIGHT,
+		ESCAPE,
+		BACKSPACE,
+		DEL,
+		RETURN,
 	};
 
-	inline InputCode GetKey()
+	inline BUILD_KEY_CODES GetKey(InputCode& inputCode)
 	{
-		InputCode result{ _getch() };
+		inputCode = _getch();
 		//detect special keys
-		if (result == 0x0 || result == 0xE0)
+		if (inputCode == 0x0 || inputCode == 0xE0)
 			switch (_getch())
 			{
-				case BUILD_KEY_CODES::UP: return BUILD_KEY_CODES::UP;
-				case BUILD_KEY_CODES::DOWN: return BUILD_KEY_CODES::DOWN;
-				case BUILD_KEY_CODES::LEFT: return BUILD_KEY_CODES::LEFT;
-				case BUILD_KEY_CODES::RIGHT: return BUILD_KEY_CODES::RIGHT;
-				case BUILD_KEY_CODES::ESCAPE: return BUILD_KEY_CODES::ESCAPE;
-				case BUILD_KEY_CODES::BACKSPACE: return BUILD_KEY_CODES::BACKSPACE;
-				case BUILD_KEY_CODES::DEL: return BUILD_KEY_CODES::DEL;
-				case BUILD_KEY_CODES::RETURN: return BUILD_KEY_CODES::RETURN;
+				case 0x48: return BUILD_KEY_CODES::UP;
+				case 0x50: return BUILD_KEY_CODES::DOWN;
+				case 0x4B: return BUILD_KEY_CODES::LEFT;
+				case 0x4D: return BUILD_KEY_CODES::RIGHT;
+				case 0x53: return BUILD_KEY_CODES::DEL;
 			}
 
-		return result;
+		switch (inputCode)
+		{
+			case 0x1B: return BUILD_KEY_CODES::ESCAPE;
+			case 0x08: return BUILD_KEY_CODES::BACKSPACE;
+			case 0x0D: return BUILD_KEY_CODES::RETURN;
+		}
+
+		return BUILD_KEY_CODES::DEFAULT;
 	}
 
 	std::unordered_map<EntryID, MFstring> symbols;
@@ -128,7 +132,7 @@ namespace ReignEngine
 				textBuffer.Delete();
 			}),
 			///ALPHA-NUMERIC KEY
-			std::make_pair(BUILD_KEY_CODES::DEFUALT, [](const InputCode keyCode)->void
+			std::make_pair(BUILD_KEY_CODES::DEFAULT, [](const InputCode keyCode)->void
 			{
 			//range printable defualt keys to alphanumeric + general symbol 
 			if (keyCode < 0x20 || keyCode > 0xE7)

@@ -116,14 +116,12 @@ int main()
 
 		if (_kbhit())
 		{
-			InputCode keyCode{ GetKey() };
+			InputCode inputCode;
+			BUILD_KEY_CODES keyCode{ GetKey(inputCode) };
 
 			const Form& currentForm{ *formStack.top() };
-			auto handlers{ keyMap };
-			if (handlers.find(keyCode) != handlers.end())
-				ForwardFunction(handlers.at(keyCode), keyCode);
-			else
-				ForwardFunction(handlers.at(ReignEngine::BUILD_KEY_CODES::DEFUALT), keyCode);
+			assert(keyMap.contains(keyCode));
+			ForwardFunction(keyMap.at(keyCode), inputCode);
 
 			if (formStack.size())
 				formStack.top()->DisplayForm(console);
