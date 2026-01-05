@@ -24,6 +24,10 @@ struct TestObjectExporter : public DatabaseExporter<TestObject>
 
 struct TestObjectBuilder : public DatabaseBuilder<TestObject>
 {
+	TestObjectBuilder()
+		: DatabaseBuilder<TestObject>{ std::make_unique<TestObjectExporter>() } 
+	{}
+
 	std::unique_ptr<Form> CreateEntryForm(const std::string& entryName, const TestObject& entryData, std::stack<std::unique_ptr<Form>>& formStack, std::unordered_map<EntryID, MFstring>& symbols)
 	{
 		std::unique_ptr<Form> result{ std::make_unique<Form>() };
@@ -89,6 +93,77 @@ struct TestObjectImporter : public DatabaseImporter<TestObject>
 	}
 };
 
+using DatabaseExportFunction = std::function<void(std::ofstream& out, std::streamoff& currentWritePosition)>;
+
+template<typename T, DBHeader Header = DatabaseHeader>
+DatabaseExportFunction MakeExportFunction(DatabaseBuilder<T>& builder/*, const DatabaseExporter<T>& exporter*/, Header& header)
+{
+	return [&builder, &header](std::ofstream& out, std::streamoff& currentWritePosition)
+	{
+		builder.ExportDatabase(header, out, currentWritePosition);
+	};
+}
+
+struct MBDFile
+{
+	void ImportFile();
+	void ExportFile();
+
+	std::ifstream mbdIn;
+	//export data
+	std::ofstream mbdOut;
+	MFsize payloadSize{ 0 };
+	//order our databases via key 
+	std::map<EntryKey, DatabaseExportFunction> exportMap;
+	std::unordered_map<EntryID, MFstring> symbols;
+};
+
+void MBDFile::ExportFile()
+{
+	//TODO: OPEN MBD FOR EXPORTING
+	const std::string path{ "Databases\\TestDatabase.mbd" };
+	mbdOut.open(path, std::ios::out | std::ios::binary);
+	assert(mbdOut.is_open());
+
+	const MFu32 databaseCount{ static_cast<MFu32>(exportMap.size()) };
+	DatabaseHeader dbHeader;
+	dbHeader.entryCount = databaseCount;
+	//compute file size
+	const MFsize headerSize{ sizeof(dbHeader) };
+	const MFsize tocSize{ dbHeader.entryCount * sizeof(EntryKey) };
+	const MFsize totalSize{ headerSize + tocSize + payloadSize };
+	assert(mbdOut.is_open());
+	//allocate blank binary for random access writes 
+	mbdOut.seekp(totalSize - 1);
+	mbdOut.put('\0');//commit write	
+	mbdOut.seekp(std::ios::beg);
+
+	//export header	
+	ExportObject(dbHeader, mbdOut);
+	const std::streampos tableOfContents{ mbdOut.tellp() };
+	MFu32 index{ 0 };
+	std::streamoff currentWritePosition{ static_cast<std::streamoff>(sizeof(dbHeader) + tocSize) };
+	//export quest and table of contents			
+	for (auto [entryKey, exportFunction] : exportMap)
+	{
+		//export database TOC
+		EntryKey writeKey{ entryKey };
+		writeKey.entryPosition = currentWritePosition;
+		const std::streampos keyPosition{ tableOfContents + static_cast<std::streamoff>(index * sizeof(EntryKey)) };
+		mbdOut.seekp(keyPosition);
+		ExportObject(writeKey, mbdOut);
+		//export database data
+		assert(exportMap.contains(writeKey));
+		DatabaseExportFunction exportFunction{ exportMap.at(writeKey) };
+		mbdOut.seekp(currentWritePosition);
+		ForwardFunction(exportFunction, mbdOut, currentWritePosition);
+		++index;
+	}
+
+	mbdOut.close();
+}
+
+static constexpr MFu64 DBID_1{ 1 }; 
 
 int main()
 {
@@ -98,7 +173,21 @@ int main()
 	const EntryID testID{ testIdentifier.c_str() };
 	TestObjectImporter testObjectImporter;
 	TestObjectBuilder testObjectBuilder;
-	TestObject testObject{ testObjectImporter.LoadEntry(testID,"TestObjectDatabase.mbd") };
+	DatabaseHeader header;
+	MBDFile file;	
+	file.exportMap.insert(std::make_pair(EntryKey{ .entryID{DBID_1},.entryName{"Database1"} }, MakeExportFunction(testObjectBuilder, header)));
+	/*
+	TestObject testObject;
+	testObject._string = "string";
+	testObject._ID = testID;
+	testObject._u32 = 69;
+	testObject._char = 'x';
+	testObjectBuilder.StoreObject(testIdentifier, testID, std::move(testObject), symbols);
+	*/
+	TestObject testObject{ testObjectImporter.LoadEntry(testID,DBID_1) };
+	testObjectBuilder.StoreObject(testIdentifier, testID, std::move(testObject), symbols);
+	testObject = testObjectBuilder.entries.at(testID);
+
 	formStack.push(std::move(testObjectBuilder.CreateEntryForm(testIdentifier, testObject, formStack, symbols)));
 	formStack.top()->DisplayForm(console);
 
@@ -116,22 +205,19 @@ int main()
 
 		if (_kbhit())
 		{
-			InputCode keyCode{ GetKey() };
+			InputCode inputCode;
+			BUILD_KEY_CODES keyCode{ GetKey(inputCode) };
 
 			const Form& currentForm{ *formStack.top() };
-			auto handlers{ keyMap };
-			if (handlers.find(keyCode) != handlers.end())
-				ForwardFunction(handlers.at(keyCode), keyCode);
-			else
-				ForwardFunction(handlers.at(ReignEngine::BUILD_KEY_CODES::DEFUALT), keyCode);
+			assert(keyMap.contains(keyCode));
+			ForwardFunction(keyMap.at(keyCode), inputCode);
 
 			if (formStack.size())
 				formStack.top()->DisplayForm(console);
 		}
-	}
-	std::ofstream testObjectDatabase{ "Databases\\TestObjectDatabase.mbd" };
-	TestObjectExporter testObjectExporter;
-	testObjectBuilder.ExportDatabase(testObjectExporter, DatabaseHeader{}, testObjectDatabase);
+	}		
+	file.payloadSize += testObjectBuilder.DatabaseSize<DatabaseHeader>();
+	file.ExportFile();
 
 	return 0;
 }
